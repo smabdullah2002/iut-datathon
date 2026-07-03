@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project-specific
+models/
+corpus/
+submission.csv
+*.npy
+*.bin
+*.pkl
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Kaggle credentials (if any)
+kaggle.json
+
+# OS
+.DS_Store
+Thumbs.db
