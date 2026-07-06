@@ -51,8 +51,9 @@ def split_samples(df, val_size=0.2, random_state=42):
 def load_xnli_bn(split="train"):
     ds = load_dataset("csebuetnlp/xnli_bn", split=split, trust_remote_code=True)
     df = pd.DataFrame(ds)
-    df = df[df["label"] != 1].reset_index(drop=True)
-    df["label"] = (df["label"] == 0).astype(int)
+    df.rename(columns={"sentence1": "premise", "sentence2": "hypothesis"}, inplace=True)
+    df = df[df["label"] != 2].reset_index(drop=True)
+    df["label"] = (df["label"] == 1).astype(int)
     return df
 
 
