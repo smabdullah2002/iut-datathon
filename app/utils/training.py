@@ -52,7 +52,6 @@ def train_xnli_warmup(model, tokenizer, xnli_dataset, output_dir=None, batch_siz
         model=model,
         args=training_args,
         train_dataset=xnli_dataset,
-        tokenizer=tokenizer,
     )
 
     trainer.train()
@@ -86,7 +85,6 @@ def train_samples(model, tokenizer, train_dataset, val_dataset, output_dir=None,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
         compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
     )
 
     trainer.train()
