@@ -96,13 +96,14 @@ def make_inference_dataset(tokenizer, df, max_length=256):
     return ds
 
 
-def make_xnli_dataset(tokenizer, df, max_length=256):
-    texts = [f"{row['premise']} {tokenizer.sep_token} {row['hypothesis']}" for _, row in df.iterrows()]
-    enc = tokenizer(texts, padding="max_length", truncation=True, max_length=max_length)
-    ds = Dataset.from_dict({
-        "input_ids": enc["input_ids"],
-        "attention_mask": enc["attention_mask"],
-        "labels": df["label"].tolist(),
-    })
+def make_xnli_dataset(tokenizer, df, max_length=256, batch_size=1000):
+    ds = Dataset.from_pandas(df[["premise", "hypothesis", "label"]])
+
+    def tokenize_batch(batch):
+        texts = [f"{p} {tokenizer.sep_token} {h}" for p, h in zip(batch["premise"], batch["hypothesis"])]
+        result = tokenizer(texts, padding="max_length", truncation=True, max_length=max_length)
+        return {"input_ids": result["input_ids"], "attention_mask": result["attention_mask"], "labels": batch["label"]}
+
+    ds = ds.map(tokenize_batch, batched=True, batch_size=batch_size, remove_columns=["premise", "hypothesis"])
     ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
     return ds
