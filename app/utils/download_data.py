@@ -32,9 +32,10 @@ def download_datasets():
 
 
 def download_wikipedia():
-    """Download Bengali Wikipedia dump for retrieval corpus."""
+    """Download Bengali Wikipedia dump with proper User-Agent."""
     import urllib.request
     import bz2
+    import xml.etree.ElementTree as ET
 
     os.makedirs(CORPUS_DIR, exist_ok=True)
 
@@ -47,18 +48,21 @@ def download_wikipedia():
     dump_path = os.path.join(CORPUS_DIR, "bnwiki-latest-pages-articles.xml.bz2")
 
     if not os.path.exists(dump_path):
-        print(f"Downloading Bengali Wikipedia dump from {dump_url}...")
-        urllib.request.urlretrieve(dump_url, dump_path)
+        print(f"Downloading Bengali Wikipedia dump...")
+        req = urllib.request.Request(
+            dump_url,
+            headers={"User-Agent": "Olikbochon/1.0 (Bangladesh; iut-datathon; mailto:team@example.com)"},
+        )
+        with urllib.request.urlopen(req) as response:
+            with open(dump_path, "wb") as f:
+                f.write(response.read())
         print("Download complete.")
     else:
         print("Wikipedia dump already downloaded.")
 
-    print("Extracting articles (this may take a while)...")
+    print("Extracting articles...")
     with bz2.open(dump_path, "rb") as f:
         content = f.read().decode("utf-8", errors="replace")
-
-    import xml.etree.ElementTree as ET
-    import re
 
     root = ET.fromstring("<?xml version='1.0' encoding='utf-8'?><mediawiki>" + content.split("<mediawiki>")[1].rsplit("</mediawiki>")[0] + "</mediawiki>")
     articles = []
