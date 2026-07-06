@@ -19,7 +19,7 @@ def download_datasets():
     print("Downloading xnli_bn dataset...")
     from datasets import load_dataset
 
-    load_dataset("csebuetnlp/xnli_bn", revision="refs/convert/parquet")
+    load_dataset("csebuetnlp/xnli_bn", trust_remote_code=True)
     print("xnli_bn cached successfully.")
 
 
@@ -32,50 +32,27 @@ def download_datasets():
 
 
 def download_wikipedia():
-    """Download Bengali Wikipedia dump with proper User-Agent."""
-    import urllib.request
-    import bz2
-    import xml.etree.ElementTree as ET
+    """Download Bengali Wikipedia from HuggingFace datasets."""
+    from datasets import load_dataset
 
     os.makedirs(CORPUS_DIR, exist_ok=True)
-
     wiki_path = os.path.join(CORPUS_DIR, "bn_wiki.txt")
+
     if os.path.exists(wiki_path):
         print(f"Wikipedia corpus already exists at {wiki_path}")
         return
 
-    dump_url = "https://dumps.wikimedia.org/bnwiki/latest/bnwiki-latest-pages-articles.xml.bz2"
-    dump_path = os.path.join(CORPUS_DIR, "bnwiki-latest-pages-articles.xml.bz2")
-
-    if not os.path.exists(dump_path):
-        print(f"Downloading Bengali Wikipedia dump...")
-        req = urllib.request.Request(
-            dump_url,
-            headers={"User-Agent": "Olikbochon/1.0 (Bangladesh; iut-datathon; mailto:team@example.com)"},
-        )
-        with urllib.request.urlopen(req) as response:
-            with open(dump_path, "wb") as f:
-                f.write(response.read())
-        print("Download complete.")
-    else:
-        print("Wikipedia dump already downloaded.")
-
-    print("Extracting articles...")
-    with bz2.open(dump_path, "rb") as f:
-        content = f.read().decode("utf-8", errors="replace")
-
-    root = ET.fromstring("<?xml version='1.0' encoding='utf-8'?><mediawiki>" + content.split("<mediawiki>")[1].rsplit("</mediawiki>")[0] + "</mediawiki>")
-    articles = []
-    for page in root.findall(".//page"):
-        title = page.findtext("title", "")
-        text = page.findtext(".//text", "")
-        if text.strip():
-            articles.append(f"Title: {title}\n{text.strip()}")
+    print("Downloading Bengali Wikipedia from HuggingFace datasets...")
+    ds = load_dataset("wikipedia", "20220301.bn", split="train", trust_remote_code=True)
+    print(f"Loaded {len(ds)} articles. Writing to {wiki_path}...")
 
     with open(wiki_path, "w", encoding="utf-8") as f:
-        f.write("\n\n=====\n\n".join(articles))
+        for i, row in enumerate(ds):
+            f.write(f"Title: {row['title']}\n{row['text']}\n\n=====\n\n")
+            if (i + 1) % 10000 == 0:
+                print(f"  Processed {i + 1}/{len(ds)} articles...")
 
-    print(f"Extracted {len(articles)} articles to {wiki_path}")
+    print(f"Saved {len(ds)} articles to {wiki_path}")
 
 
 def build_faiss_index():
