@@ -7,7 +7,7 @@ COLAB = "COLAB_GPU" in os.environ
 if COLAB:
     DATA_DIR = "/content/dataset"
     MODELS_DIR = "/content/drive/MyDrive/iut_datathon_models"
-    CORPUS_DIR = "/content/corpus"
+    CORPUS_DIR = "/content/drive/MyDrive/iut_datathon_models/corpus"
 else:
     DATA_DIR = "app/dataset"
     MODELS_DIR = "models"
