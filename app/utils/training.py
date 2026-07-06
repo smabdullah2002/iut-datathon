@@ -69,12 +69,8 @@ def train_samples(model, tokenizer, train_dataset, val_dataset, output_dir=None,
         per_device_eval_batch_size=batch_size * 2,
         learning_rate=lr,
         eval_strategy="epoch",
-        save_strategy="epoch",
-        load_best_model_at_end=True,
-        metric_for_best_model="f1_hallucinated",
-        greater_is_better=True,
+        save_strategy="no",
         logging_steps=10,
-        save_total_limit=2,
         remove_unused_columns=False,
         report_to="none",
     )
@@ -88,7 +84,7 @@ def train_samples(model, tokenizer, train_dataset, val_dataset, output_dir=None,
     )
 
     trainer.train()
-    return trainer.model, trainer.state.best_model_checkpoint
+    return trainer.model
 
 
 def save_model(model, tokenizer, path):

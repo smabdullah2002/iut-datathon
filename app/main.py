@@ -48,11 +48,10 @@ def train(args):
     val_dataset = make_samples_dataset(tokenizer, val_df, max_length=args.max_length)
 
     print(f"Fine-tuning for {args.epochs} epochs...")
-    model, best_ckpt = train_samples(
+    model = train_samples(
         model, tokenizer, train_dataset, val_dataset,
         batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
     )
-    print(f"Best checkpoint: {best_ckpt}")
 
     save_path = os.path.join(MODELS_DIR, "best_model")
     save_model(model, tokenizer, save_path)
