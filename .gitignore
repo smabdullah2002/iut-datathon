@@ -25,6 +25,10 @@ submission.csv
 *.npy
 *.bin
 *.pkl
+*.index
+
+# Colab / runtime
+colab_cache/
 
 # Jupyter
 .ipynb_checkpoints/
