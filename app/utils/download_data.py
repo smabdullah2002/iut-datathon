@@ -25,10 +25,10 @@ def download_datasets():
 
     try:
         print("Downloading BNLI dataset...")
-        load_dataset("bnli", trust_remote_code=True)
+        load_dataset("bnli")
         print("BNLI cached.")
-    except Exception:
-        print("BNLI not found on HF, skipping.")
+    except Exception as e:
+        print(f"BNLI not available: {e}. Skipping.")
 
 
 def download_wikipedia():
