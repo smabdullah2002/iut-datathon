@@ -6,12 +6,7 @@ from sklearn.model_selection import train_test_split
 from datasets import load_dataset, Dataset
 from transformers import AutoTokenizer
 
-COLAB = "COLAB_GPU" in os.environ
-
-if COLAB:
-    DATA_DIR = "/content/dataset"
-else:
-    DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dataset")
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dataset")
 
 
 def set_seed(seed=42):
