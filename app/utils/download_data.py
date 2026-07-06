@@ -32,9 +32,8 @@ def download_datasets():
 
 
 def download_wikipedia():
-    """Download Bengali Wikipedia parquet files from HuggingFace Hub."""
-    import pandas as pd
-    import requests
+    """Download Bengali Wikipedia via HuggingFace datasets (rejauldu/bengali-wikipedia)."""
+    from datasets import load_dataset
 
     os.makedirs(CORPUS_DIR, exist_ok=True)
     wiki_path = os.path.join(CORPUS_DIR, "bn_wiki.txt")
@@ -43,25 +42,17 @@ def download_wikipedia():
         print(f"Wikipedia corpus already exists at {wiki_path}")
         return
 
-    base = "https://huggingface.co/datasets/wikipedia/resolve/main/20220301.bn"
-    files = [f"{base}/train-{i:05d}-of-00004.parquet" for i in range(4)]
-
-    print("Downloading Bengali Wikipedia parquet files...")
-    dfs = []
-    for i, url in enumerate(files):
-        print(f"  Downloading part {i + 1}/4...")
-        dfs.append(pd.read_parquet(url))
-
-    df = pd.concat(dfs, ignore_index=True)
-    print(f"Loaded {len(df)} articles. Writing to {wiki_path}...")
+    print("Downloading rejauldu/bengali-wikipedia via HuggingFace datasets...")
+    ds = load_dataset("rejauldu/bengali-wikipedia", split="train")
+    print(f"Loaded {len(ds)} articles. Writing to {wiki_path}...")
 
     with open(wiki_path, "w", encoding="utf-8") as f:
-        for i, (_, row) in enumerate(df.iterrows()):
-            f.write(f"Title: {row['title']}\n{row['text']}\n\n=====\n\n")
-            if (i + 1) % 10000 == 0:
-                print(f"  Written {i + 1}/{len(df)} articles...")
+        for i, example in enumerate(ds):
+            f.write(f"{example['text']}\n\n=====\n\n")
+            if (i + 1) % 50000 == 0:
+                print(f"  Written {i + 1}/{len(ds)} articles...")
 
-    print(f"Saved {len(df)} articles to {wiki_path}")
+    print(f"Saved {len(ds)} articles to {wiki_path}")
 
 
 def build_faiss_index():
