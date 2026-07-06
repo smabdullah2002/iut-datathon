@@ -19,7 +19,7 @@ def download_datasets():
     print("Downloading xnli_bn dataset...")
     from datasets import load_dataset
 
-    load_dataset("csebuetnlp/xnli_bn", trust_remote_code=True)
+    load_dataset("csebuetnlp/xnli_bn", revision="refs/convert/parquet")
     print("xnli_bn cached successfully.")
 
 
