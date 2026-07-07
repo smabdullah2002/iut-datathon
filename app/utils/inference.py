@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from app.utils.preprocessing import build_input_text
 
 COLAB = "COLAB_GPU" in os.environ
 
@@ -27,13 +28,7 @@ def predict_df(model, tokenizer, df, batch_size=16, max_length=256):
 
     for i in range(0, len(df), batch_size):
         batch = df.iloc[i:i + batch_size]
-        texts = []
-        for _, row in batch.iterrows():
-            if row["context"] == "[NULL]":
-                text = f"{tokenizer.sep_token} {row['prompt_bn']} {tokenizer.sep_token} {row['response_bn']}"
-            else:
-                text = f"{row['context']} {tokenizer.sep_token} {row['prompt_bn']} {tokenizer.sep_token} {row['response_bn']}"
-            texts.append(text)
+        texts = [build_input_text(row, tokenizer.sep_token) for _, row in batch.iterrows()]
 
         enc = tokenizer(texts, padding=True, truncation=True, max_length=max_length, return_tensors="pt")
         enc = {k: v.to(device) for k, v in enc.items()}
@@ -46,7 +41,9 @@ def predict_df(model, tokenizer, df, batch_size=16, max_length=256):
     return np.array(all_preds)
 
 
-def write_submission(predictions, output_path="submission.csv"):
-    df = pd.DataFrame({"id": range(1, len(predictions) + 1), "label": predictions})
+def write_submission(predictions, output_path="submission.csv", ids=None):
+    if ids is None:
+        ids = range(1, len(predictions) + 1)
+    df = pd.DataFrame({"id": ids, "label": predictions})
     df.to_csv(output_path, index=False)
     print(f"Submission saved to {output_path} with {len(df)} predictions")

@@ -26,10 +26,21 @@ def train(args):
 
     print("Loading samples...")
     df = load_samples()
+
+    tokenizer = get_tokenizer(model_name=args.model_name)
+
+    if args.cv > 0:
+        print(f"Running {args.cv}-fold cross-validation...")
+        from app.utils.training import cross_validate
+        cv_results = cross_validate(
+            df, tokenizer, n_splits=args.cv, model_name=args.model_name,
+            batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
+            max_length=args.max_length, seed=args.seed,
+        )
+
     train_df, val_df = split_samples(df, val_size=args.val_split, random_state=args.seed)
     print(f"Train: {len(train_df)}, Val: {len(val_df)}")
 
-    tokenizer = get_tokenizer()
     model = get_model(num_labels=2, model_name=args.model_name)
 
     if not args.skip_xnli:
@@ -48,10 +59,11 @@ def train(args):
     val_dataset = make_samples_dataset(tokenizer, val_df, max_length=args.max_length)
 
     print(f"Fine-tuning for {args.epochs} epochs...")
-    model = train_samples(
+    model, final_metrics = train_samples(
         model, tokenizer, train_dataset, val_dataset,
         batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
     )
+    print(f"  Best val f1_hallucinated: {final_metrics.get('eval_f1_hallucinated', 'N/A'):.4f}")
 
     save_path = os.path.join(MODELS_DIR, "best_model")
     save_model(model, tokenizer, save_path)
@@ -72,6 +84,8 @@ def predict(args):
     test_df = load_test_set()
     print(f"  {len(test_df)} test samples")
 
+    ids = test_df["id"].values
+
     print("Running inference...")
     predictions = predict_df(model, tokenizer, test_df, batch_size=args.batch_size, max_length=args.max_length)
 
@@ -79,7 +93,7 @@ def predict(args):
     label_dist = dict(zip(vals, counts))
     print(f"  Predictions: {label_dist}")
 
-    write_submission(predictions, output_path=args.output)
+    write_submission(predictions, output_path=args.output, ids=ids)
 
 
 def download(args):
@@ -106,6 +120,7 @@ def main():
     train_parser.add_argument("--skip-xnli", action="store_true")
     train_parser.add_argument("--xnli-epochs", type=int, default=2)
     train_parser.add_argument("--xnli-lr", type=float, default=3e-5)
+    train_parser.add_argument("--cv", type=int, default=0, help="Number of CV folds (0 = no CV)")
     train_parser.set_defaults(func=train)
 
     predict_parser = subparsers.add_parser("predict", help="Run inference")

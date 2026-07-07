@@ -57,8 +57,8 @@ def load_xnli_bn(split="train"):
     return df
 
 
-def get_tokenizer():
-    return AutoTokenizer.from_pretrained("csebuetnlp/banglabert_large")
+def get_tokenizer(model_name="csebuetnlp/banglabert_large"):
+    return AutoTokenizer.from_pretrained(model_name)
 
 
 def _patch_torchvision():
@@ -70,14 +70,15 @@ def _patch_torchvision():
 
 _patch_torchvision()
 
+
+def build_input_text(row, sep_token):
+    if row["context"] == "[NULL]":
+        return f"{sep_token} {row['prompt_bn']} {sep_token} {row['response_bn']}"
+    return f"{row['context']} {sep_token} {row['prompt_bn']} {sep_token} {row['response_bn']}"
+
+
 def make_samples_dataset(tokenizer, df, max_length=256):
-    texts = []
-    for _, row in df.iterrows():
-        if row["context"] == "[NULL]":
-            text = f"{tokenizer.sep_token} {row['prompt_bn']} {tokenizer.sep_token} {row['response_bn']}"
-        else:
-            text = f"{row['context']} {tokenizer.sep_token} {row['prompt_bn']} {tokenizer.sep_token} {row['response_bn']}"
-        texts.append(text)
+    texts = [build_input_text(row, tokenizer.sep_token) for _, row in df.iterrows()]
     enc = tokenizer(texts, padding="max_length", truncation=True, max_length=max_length)
     ds = Dataset.from_dict({
         "input_ids": enc["input_ids"],
@@ -89,13 +90,7 @@ def make_samples_dataset(tokenizer, df, max_length=256):
 
 
 def make_inference_dataset(tokenizer, df, max_length=256):
-    texts = []
-    for _, row in df.iterrows():
-        if row["context"] == "[NULL]":
-            text = f"{tokenizer.sep_token} {row['prompt_bn']} {tokenizer.sep_token} {row['response_bn']}"
-        else:
-            text = f"{row['context']} {tokenizer.sep_token} {row['prompt_bn']} {tokenizer.sep_token} {row['response_bn']}"
-        texts.append(text)
+    texts = [build_input_text(row, tokenizer.sep_token) for _, row in df.iterrows()]
     enc = tokenizer(texts, padding="max_length", truncation=True, max_length=max_length)
     ds = Dataset.from_dict({
         "input_ids": enc["input_ids"],
