@@ -15,6 +15,8 @@ else:
 def load_model(model_dir):
     model = AutoModelForSequenceClassification.from_pretrained(model_dir)
     tokenizer = AutoTokenizer.from_pretrained(model_dir)
+    if torch.cuda.is_available():
+        model = model.to("cuda")
     model.eval()
     return model, tokenizer
 
