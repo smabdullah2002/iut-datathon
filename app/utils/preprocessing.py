@@ -64,10 +64,9 @@ def get_tokenizer():
 def _patch_torchvision():
     import torchvision
     if not hasattr(torchvision.io, "VideoReader"):
-        try:
-            torchvision.io.VideoReader = torchvision.io.video_reader.VideoReader
-        except AttributeError:
+        class _DummyVideoReader:
             pass
+        torchvision.io.VideoReader = _DummyVideoReader
 
 _patch_torchvision()
 
