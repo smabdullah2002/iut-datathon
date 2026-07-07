@@ -29,6 +29,15 @@ def train(args):
 
     tokenizer = get_tokenizer(model_name=args.model_name)
 
+    if args.retrieve:
+        print("Augmenting context-absent rows with Wikipedia retrieval...")
+        from app.utils.retrieval import retrieve_best_passage
+        missing = df["context"] == "[NULL]"
+        retrieved = [retrieve_best_passage(p, r) for p, r in zip(df.loc[missing, "prompt_bn"], df.loc[missing, "response_bn"])]
+        df.loc[missing, "context"] = retrieved
+        filled = (df.loc[missing, "context"] != "").sum()
+        print(f"  Retrieved {filled}/{missing.sum()} passages")
+
     if args.cv > 0:
         print(f"Running {args.cv}-fold cross-validation...")
         from app.utils.training import cross_validate
@@ -121,6 +130,7 @@ def main():
     train_parser.add_argument("--xnli-epochs", type=int, default=2)
     train_parser.add_argument("--xnli-lr", type=float, default=3e-5)
     train_parser.add_argument("--cv", type=int, default=0, help="Number of CV folds (0 = no CV)")
+    train_parser.add_argument("--retrieve", action="store_true", help="Augment context-absent rows with Wikipedia retrieval during training")
     train_parser.set_defaults(func=train)
 
     predict_parser = subparsers.add_parser("predict", help="Run inference")

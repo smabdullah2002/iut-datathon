@@ -36,6 +36,9 @@ colab_cache/
 # Kaggle credentials (if any)
 kaggle.json
 
+# Team docs (not committed)
+TEAM_DOCS.md
+
 # OS
 .DS_Store
 Thumbs.db
