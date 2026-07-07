@@ -87,7 +87,7 @@ def predict(args):
     ids = test_df["id"].values
 
     print("Running inference...")
-    predictions = predict_df(model, tokenizer, test_df, batch_size=args.batch_size, max_length=args.max_length)
+    predictions = predict_df(model, tokenizer, test_df, batch_size=args.batch_size, max_length=args.max_length, use_retrieval=args.retrieve)
 
     vals, counts = np.unique(predictions, return_counts=True)
     label_dist = dict(zip(vals, counts))
@@ -128,6 +128,7 @@ def main():
     predict_parser.add_argument("--model-dir", default=None)
     predict_parser.add_argument("--batch-size", type=int, default=16)
     predict_parser.add_argument("--max-length", type=int, default=256)
+    predict_parser.add_argument("--retrieve", action="store_true", help="Retrieve Wikipedia passages for context-absent rows")
     predict_parser.set_defaults(func=predict)
 
     download_parser = subparsers.add_parser("download", help="Download datasets in Colab")

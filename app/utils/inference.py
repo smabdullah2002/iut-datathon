@@ -22,10 +22,21 @@ def load_model(model_dir):
     return model, tokenizer
 
 
-def predict_df(model, tokenizer, df, batch_size=16, max_length=256):
+def predict_df(model, tokenizer, df, batch_size=16, max_length=256, use_retrieval=False):
     device = next(model.parameters()).device
-    all_preds = []
 
+    if use_retrieval:
+        from app.utils.retrieval import retrieve_best_passage
+        import copy
+        df = copy.deepcopy(df)
+        missing = df["context"] == "[NULL]"
+        retrieved = [retrieve_best_passage(p, r) for p, r in zip(df.loc[missing, "prompt_bn"], df.loc[missing, "response_bn"])]
+        df.loc[missing, "context"] = retrieved
+        retrieved_count = (df.loc[missing, "context"] != "").sum()
+        if retrieved_count < missing.sum():
+            print(f"  Retrieved {retrieved_count}/{missing.sum()} context-absent rows")
+
+    all_preds = []
     for i in range(0, len(df), batch_size):
         batch = df.iloc[i:i + batch_size]
         texts = [build_input_text(row, tokenizer.sep_token) for _, row in batch.iterrows()]
