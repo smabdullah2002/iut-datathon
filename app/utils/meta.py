@@ -8,7 +8,7 @@ def extract_features(model, tokenizer, df, batch_size=16, max_length=256, use_re
     from app.utils.retrieval import retrieve_best_passage_with_score
 
     features = pd.DataFrame(index=df.index)
-    has_orig_context = (df["context"] != "[NULL"])
+    has_orig_context = (df["context"] != "[NULL]")
     features["has_context"] = has_orig_context.astype(int)
     features["response_len"] = df["response_bn"].str.len()
 
