@@ -61,6 +61,16 @@ def get_tokenizer():
     return AutoTokenizer.from_pretrained("csebuetnlp/banglabert_large")
 
 
+def _patch_torchvision():
+    import torchvision
+    if not hasattr(torchvision.io, "VideoReader"):
+        try:
+            torchvision.io.VideoReader = torchvision.io.video_reader.VideoReader
+        except AttributeError:
+            pass
+
+_patch_torchvision()
+
 def make_samples_dataset(tokenizer, df, max_length=256):
     texts = []
     for _, row in df.iterrows():
