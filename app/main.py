@@ -105,6 +105,51 @@ def predict(args):
     write_submission(predictions, output_path=args.output, ids=ids)
 
 
+def meta(args):
+    import numpy as np
+    from app.utils.preprocessing import load_samples, load_test_set
+    from sklearn.model_selection import train_test_split
+    from app.utils.inference import load_model, write_submission
+    from app.utils.meta import extract_features, train_lightgbm, predict_lightgbm
+
+    print("Loading model...")
+    model_dir = args.model_dir or os.path.join(MODELS_DIR, "best_model")
+    model, tokenizer = load_model(model_dir)
+    print(f"Model loaded from {model_dir}")
+
+    print("Loading datasets...")
+    train_df = load_samples()
+    test_df = load_test_set()
+
+    use_retrieval = args.retrieve
+    if use_retrieval:
+        print("Using retrieval for context-absent rows")
+
+    stratify = train_df["label"].astype(str) + "_" + (train_df["context"] != "[NULL]").astype(str)
+    train_fold, val_fold = train_test_split(
+        train_df, test_size=args.val_split, stratify=stratify, random_state=args.seed,
+    )
+    print(f"Train: {len(train_fold)}, Val: {len(val_fold)}")
+
+    print("Extracting features...")
+    train_feats = extract_features(model, tokenizer, train_fold, use_retrieval=use_retrieval, batch_size=args.batch_size, max_length=args.max_length)
+    val_feats = extract_features(model, tokenizer, val_fold, use_retrieval=use_retrieval, batch_size=args.batch_size, max_length=args.max_length)
+
+    print("Training LightGBM...")
+    meta_model = train_lightgbm(train_feats, val_feats)
+
+    print("Extracting test features...")
+    test_feats = extract_features(model, tokenizer, test_df, use_retrieval=use_retrieval, batch_size=args.batch_size, max_length=args.max_length)
+
+    print("Predicting...")
+    predictions = predict_lightgbm(meta_model, test_feats)
+    vals, counts = np.unique(predictions, return_counts=True)
+    print(f"  Predictions: {dict(zip(vals, counts))}")
+
+    ids = test_df["id"].values
+    write_submission(predictions, output_path=args.output, ids=ids)
+
+
 def download(args):
     from app.utils.download_data import main as download_main
     import sys
@@ -140,6 +185,16 @@ def main():
     predict_parser.add_argument("--max-length", type=int, default=256)
     predict_parser.add_argument("--retrieve", action="store_true", help="Retrieve Wikipedia passages for context-absent rows")
     predict_parser.set_defaults(func=predict)
+
+    meta_parser = subparsers.add_parser("meta", help="Train LightGBM meta-classifier over frozen Track A + Track B features")
+    meta_parser.add_argument("--output", default="submission_meta.csv")
+    meta_parser.add_argument("--model-dir", default=None)
+    meta_parser.add_argument("--batch-size", type=int, default=16)
+    meta_parser.add_argument("--max-length", type=int, default=256)
+    meta_parser.add_argument("--val-split", type=float, default=0.2)
+    meta_parser.add_argument("--seed", type=int, default=42)
+    meta_parser.add_argument("--retrieve", action="store_true", help="Include retrieval features")
+    meta_parser.set_defaults(func=meta)
 
     download_parser = subparsers.add_parser("download", help="Download datasets in Colab")
     download_parser.add_argument("extra_args", nargs="*")

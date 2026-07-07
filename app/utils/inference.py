@@ -22,7 +22,7 @@ def load_model(model_dir):
     return model, tokenizer
 
 
-def predict_df(model, tokenizer, df, batch_size=16, max_length=256, use_retrieval=False):
+def predict_df(model, tokenizer, df, batch_size=16, max_length=256, use_retrieval=False, return_proba=False):
     device = next(model.parameters()).device
 
     if use_retrieval:
@@ -46,10 +46,16 @@ def predict_df(model, tokenizer, df, batch_size=16, max_length=256, use_retrieva
 
         with torch.no_grad():
             outputs = model(**enc)
-        preds = torch.argmax(outputs.logits, dim=-1).cpu().numpy()
-        all_preds.extend(preds.tolist())
+        if return_proba:
+            probs = torch.softmax(outputs.logits, dim=-1).cpu().numpy()
+            all_preds.extend(probs.tolist())
+        else:
+            preds = torch.argmax(outputs.logits, dim=-1).cpu().numpy()
+            all_preds.extend(preds.tolist())
 
-    return np.array(all_preds)
+    if return_proba:
+        return np.array(all_preds)  # shape (N, 2)
+    return np.array(all_preds)  # shape (N,)
 
 
 def write_submission(predictions, output_path="submission.csv", ids=None):

@@ -34,7 +34,7 @@ class _Retriever:
 
     def retrieve(self, query, k=1):
         self._load()
-        emb = self.model.encode([query], show_progress_bar=False)
+        emb = self.model.encode([query], show_progress_bar=True)
         scores, indices = self.index.search(emb.astype(np.float32), k)
         return [(self.texts[idx], float(scores[0][i])) for i, idx in enumerate(indices[0])]
 
@@ -49,3 +49,11 @@ _retriever = _Retriever()
 def retrieve_best_passage(prompt, response):
     query = f"{prompt} {response}"
     return _retriever.retrieve_best(query)
+
+
+def retrieve_best_passage_with_score(prompt, response):
+    query = f"{prompt} {response}"
+    results = _retriever.retrieve(query, k=1)
+    if results:
+        return results[0]
+    return ("", 0.0)
