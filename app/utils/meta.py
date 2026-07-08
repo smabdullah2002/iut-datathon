@@ -66,6 +66,7 @@ def oof_meta_features(df, tokenizer, n_splits=5, model_name="csebuetnlp/banglabe
         fold_model, _ = train_samples(
             fold_model, tokenizer, train_ds, val_ds,
             output_dir=out_dir, batch_size=batch_size, epochs=epochs, lr=lr,
+            save_checkpoints=False,
         )
 
         val_probs = predict_df(fold_model, tokenizer, val_df, batch_size=batch_size,

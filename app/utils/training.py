@@ -5,6 +5,7 @@ from transformers import (
     AutoModelForSequenceClassification,
     TrainingArguments,
     Trainer,
+    TrainerCallback,
 )
 
 COLAB = "COLAB_GPU" in os.environ
@@ -33,6 +34,21 @@ def get_model(num_labels=2, model_name="csebuetnlp/banglabert_large"):
     return AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=num_labels)
 
 
+class _BestModelCallback(TrainerCallback):
+    def __init__(self, model):
+        self.model = model
+        self.best_f1 = -1.0
+        self.best_state_dict = None
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if metrics is None:
+            return
+        f1 = metrics.get("eval_f1_hallucinated", -1.0)
+        if f1 > self.best_f1:
+            self.best_f1 = f1
+            self.best_state_dict = {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
+
+
 def train_xnli_warmup(model, tokenizer, xnli_dataset, output_dir=None, batch_size=16, epochs=2, lr=3e-5):
     if output_dir is None:
         output_dir = os.path.join(MODELS_DIR, "xnli_warmup")
@@ -58,38 +74,72 @@ def train_xnli_warmup(model, tokenizer, xnli_dataset, output_dir=None, batch_siz
     return model
 
 
-def train_samples(model, tokenizer, train_dataset, val_dataset, output_dir=None, batch_size=8, epochs=30, lr=2e-5):
+def train_samples(model, tokenizer, train_dataset, val_dataset, output_dir=None, batch_size=8, epochs=30, lr=2e-5, save_checkpoints=True):
     if output_dir is None:
         output_dir = os.path.join(MODELS_DIR, "samples_finetune")
 
-    training_args = TrainingArguments(
-        output_dir=output_dir,
-        num_train_epochs=epochs,
-        per_device_train_batch_size=batch_size,
-        per_device_eval_batch_size=batch_size * 2,
-        learning_rate=lr,
-        eval_strategy="epoch",
-        save_strategy="epoch",
-        save_total_limit=2,
-        load_best_model_at_end=True,
-        metric_for_best_model="f1_hallucinated",
-        greater_is_better=True,
-        logging_steps=10,
-        remove_unused_columns=False,
-        report_to="none",
-    )
+    if save_checkpoints:
+        training_args = TrainingArguments(
+            output_dir=output_dir,
+            num_train_epochs=epochs,
+            per_device_train_batch_size=batch_size,
+            per_device_eval_batch_size=batch_size * 2,
+            learning_rate=lr,
+            eval_strategy="epoch",
+            save_strategy="epoch",
+            save_total_limit=2,
+            load_best_model_at_end=True,
+            metric_for_best_model="f1_hallucinated",
+            greater_is_better=True,
+            logging_steps=10,
+            remove_unused_columns=False,
+            report_to="none",
+        )
 
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,
-        compute_metrics=compute_metrics,
-    )
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=val_dataset,
+            compute_metrics=compute_metrics,
+        )
 
-    trainer.train()
-    metrics = trainer.evaluate()
-    return trainer.model, metrics
+        trainer.train()
+        metrics = trainer.evaluate()
+        return trainer.model, metrics
+    else:
+        training_args = TrainingArguments(
+            output_dir=output_dir,
+            num_train_epochs=epochs,
+            per_device_train_batch_size=batch_size,
+            per_device_eval_batch_size=batch_size * 2,
+            learning_rate=lr,
+            eval_strategy="epoch",
+            save_strategy="no",
+            load_best_model_at_end=False,
+            logging_steps=10,
+            remove_unused_columns=False,
+            report_to="none",
+        )
+
+        callback = _BestModelCallback(model)
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=val_dataset,
+            compute_metrics=compute_metrics,
+            callbacks=[callback],
+        )
+
+        trainer.train()
+        metrics = trainer.evaluate()
+
+        if callback.best_state_dict is not None:
+            model.load_state_dict(callback.best_state_dict)
+            print(f"  Restored best model (f1_hallucinated: {callback.best_f1:.4f})")
+
+        return model, metrics
 
 
 def save_model(model, tokenizer, path):
