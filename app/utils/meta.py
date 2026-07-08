@@ -83,6 +83,20 @@ def oof_meta_features(df, tokenizer, n_splits=5, model_name="csebuetnlp/banglabe
     return train_meta, fold_models
 
 
+def _best_threshold(model, X_val, y_val):
+    probs = model.predict_proba(X_val)[:, 0]
+    best_th = 0.5
+    best_f1 = -1.0
+    for th in np.arange(0.1, 0.9, 0.025):
+        preds = (probs >= th).astype(int)
+        p, r, f1, _ = precision_recall_fscore_support(y_val, preds, average=None, zero_division=0)
+        if f1[0] > best_f1:
+            best_f1 = f1[0]
+            best_th = th
+    print(f"  Tuned threshold: {best_th:.3f} (val f1_hallucinated: {best_f1:.4f})")
+    return best_th
+
+
 def train_lightgbm(train_features, val_features=None):
     import lightgbm as lgb
 
@@ -107,16 +121,19 @@ def train_lightgbm(train_features, val_features=None):
     p, r, f1, _ = precision_recall_fscore_support(y_train, train_preds, average=None, zero_division=0)
     print(f"  Train f1_hallucinated: {f1[0]:.4f}")
 
+    threshold = 0.5
     if val_features is not None:
         X_val = val_features.drop(columns=["label"])
         y_val = val_features["label"]
         val_preds = model.predict(X_val)
         p, r, f1, _ = precision_recall_fscore_support(y_val, val_preds, average=None, zero_division=0)
-        print(f"  Val f1_hallucinated:   {f1[0]:.4f}")
+        print(f"  Val f1_hallucinated (th=0.5): {f1[0]:.4f}")
+        threshold = _best_threshold(model, X_val, y_val)
 
     print(f"  Feature importances: {dict(zip(X_train.columns, model.feature_importances_))}")
-    return model
+    return model, threshold
 
 
-def predict_lightgbm(model, test_features):
-    return model.predict(test_features)
+def predict_lightgbm(model, test_features, threshold=0.5):
+    probs = model.predict_proba(test_features)[:, 0]
+    return (probs >= threshold).astype(int)

@@ -174,10 +174,10 @@ def meta(args):
     print(f"LightGBM train: {len(meta_train_df)}, val: {len(meta_val_df)}")
 
     print("Training LightGBM...")
-    meta_model = train_lightgbm(meta_train_df, meta_val_df)
+    meta_model, best_th = train_lightgbm(meta_train_df, meta_val_df)
 
     print("Predicting...")
-    predictions = predict_lightgbm(meta_model, test_feats)
+    predictions = predict_lightgbm(meta_model, test_feats, threshold=best_th)
     vals, counts = np.unique(predictions, return_counts=True)
     print(f"  Predictions: {dict(zip(vals, counts))}")
 
