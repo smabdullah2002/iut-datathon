@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import pandas as pd
+import torch
 from sklearn.metrics import precision_recall_fscore_support
 from app.utils.retrieval import retrieve_best_passage_with_score
 
@@ -46,8 +47,6 @@ def oof_meta_features(df, tokenizer, n_splits=5, model_name="csebuetnlp/banglabe
     static_feats = _static_features(df)
     oof_proba_0 = np.empty(len(df), dtype=np.float32)
     oof_proba_1 = np.empty(len(df), dtype=np.float32)
-    fold_models = []
-
     for fold, (train_idx, val_idx) in enumerate(skf.split(df, stratify_cols)):
         print(f"\n--- Meta CV Fold {fold + 1}/{n_splits} ---")
         train_df = df.iloc[train_idx].reset_index(drop=True)
@@ -74,13 +73,14 @@ def oof_meta_features(df, tokenizer, n_splits=5, model_name="csebuetnlp/banglabe
                                 return_proba=True)
         oof_proba_0[val_idx] = val_probs[:, 0]
         oof_proba_1[val_idx] = val_probs[:, 1]
-        fold_models.append(fold_model)
+        fold_model.cpu()
+        torch.cuda.empty_cache()
 
     train_meta = static_feats.copy()
     train_meta["proba_0"] = oof_proba_0
     train_meta["proba_1"] = oof_proba_1
 
-    return train_meta, fold_models
+    return train_meta
 
 
 def _best_threshold(model, X_val, y_val):

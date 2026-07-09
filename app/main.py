@@ -107,6 +107,7 @@ def predict(args):
 
 def meta(args):
     import numpy as np
+    import torch
     from app.utils.preprocessing import (
         load_samples, load_test_set, get_tokenizer,
         split_samples, load_xnli_bn, make_xnli_dataset, make_samples_dataset,
@@ -138,7 +139,7 @@ def meta(args):
 
     n_splits = max(2, args.cv)
     print(f"\nGenerating OOF probabilities ({n_splits}-fold CV)...")
-    train_meta, fold_models = oof_meta_features(
+    train_meta = oof_meta_features(
         train_df, tokenizer, n_splits=n_splits,
         model_name=args.model_name,
         batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
@@ -147,6 +148,10 @@ def meta(args):
         xnli_model=base_model if not args.skip_xnli else None,
     )
 
+    base_model_state = base_model.state_dict()
+    del base_model
+    torch.cuda.empty_cache()
+
     print("\nTraining final model on all data...")
     train_fold, val_fold = split_samples(train_df, val_size=args.val_split, random_state=args.seed)
     train_ds = make_samples_dataset(tokenizer, train_fold, max_length=args.max_length)
@@ -154,7 +159,7 @@ def meta(args):
 
     final_model = get_model(num_labels=2, model_name=args.model_name)
     if not args.skip_xnli:
-        final_model.load_state_dict(base_model.state_dict())
+        final_model.load_state_dict(base_model_state)
     final_model, final_metrics = train_samples(
         final_model, tokenizer, train_ds, val_ds,
         batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
