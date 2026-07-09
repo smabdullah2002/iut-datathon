@@ -74,9 +74,30 @@ def train_xnli_warmup(model, tokenizer, xnli_dataset, output_dir=None, batch_siz
     return model
 
 
-def train_samples(model, tokenizer, train_dataset, val_dataset, output_dir=None, batch_size=8, epochs=30, lr=2e-5, save_checkpoints=True):
+def train_samples(model, tokenizer, train_dataset, val_dataset=None, output_dir=None, batch_size=8, epochs=30, lr=2e-5, save_checkpoints=True):
     if output_dir is None:
         output_dir = os.path.join(MODELS_DIR, "samples_finetune")
+
+    if val_dataset is None:
+        training_args = TrainingArguments(
+            output_dir=output_dir,
+            num_train_epochs=epochs,
+            per_device_train_batch_size=batch_size,
+            learning_rate=lr,
+            save_strategy="no",
+            logging_steps=10,
+            remove_unused_columns=False,
+            report_to="none",
+        )
+
+        trainer = Trainer(
+            model=model,
+            args=training_args,
+            train_dataset=train_dataset,
+        )
+
+        trainer.train()
+        return trainer.model, {}
 
     if save_checkpoints:
         training_args = TrainingArguments(
@@ -155,6 +176,8 @@ def cross_validate(df, tokenizer, n_splits=5, model_name="csebuetnlp/banglabert_
 
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
     stratify_cols = df["label"].astype(str) + "_" + df["has_context"].astype(str)
+    if "band" in df.columns:
+        stratify_cols = stratify_cols + "_" + df["band"].astype(str)
 
     all_metrics = []
     for fold, (train_idx, val_idx) in enumerate(skf.split(df, stratify_cols)):

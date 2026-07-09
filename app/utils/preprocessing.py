@@ -19,13 +19,31 @@ def set_seed(seed=42):
         torch.cuda.manual_seed_all(seed)
 
 
-def load_samples():
+def load_cband(path="cband_annotation.csv"):
+    full_path = os.path.join(DATA_DIR, path)
+    if not os.path.exists(full_path):
+        return None
+    df = pd.read_csv(full_path)
+    df["band"] = df["band"].str.strip().str.upper()
+    invalid = ~df["band"].isin(["C0", "C1", "C2"])
+    if invalid.any():
+        print(f"Warning: {invalid.sum()} rows in {path} have invalid or empty bands. Returning None.")
+        return None
+    return df[["id", "band"]]
+
+
+def load_samples(load_bands=True):
     path = os.path.join(DATA_DIR, "samples.json")
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     df = pd.DataFrame(data)
     df["response_bn"] = df["response_bn"].astype(str)
     df["has_context"] = (df["context"] != "[NULL]").astype(int)
+    if load_bands:
+        cband = load_cband()
+        if cband is not None:
+            df = df.merge(cband, left_index=True, right_on="id", how="left")
+            df["band"] = df["band"].fillna("C0")
     return df
 
 
@@ -39,6 +57,8 @@ def load_test_set():
 
 def split_samples(df, val_size=0.2, random_state=42):
     stratify_cols = df["label"].astype(str) + "_" + df["has_context"].astype(str)
+    if "band" in df.columns:
+        stratify_cols = stratify_cols + "_" + df["band"].astype(str)
     train_df, val_df = train_test_split(
         df,
         test_size=val_size,

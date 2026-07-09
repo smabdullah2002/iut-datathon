@@ -24,6 +24,7 @@ def load_model(model_dir):
 
 def predict_df(model, tokenizer, df, batch_size=16, max_length=256, use_retrieval=False, return_proba=False):
     device = next(model.parameters()).device
+    model.eval()
 
     if use_retrieval:
         from app.utils.retrieval import retrieve_best_passage

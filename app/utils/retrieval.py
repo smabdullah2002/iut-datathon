@@ -57,3 +57,11 @@ def retrieve_best_passage_with_score(prompt, response):
     if results:
         return results[0]
     return ("", 0.0)
+
+
+def retrieve_top_k(prompt, response, k=5):
+    query = f"{prompt} {response}"
+    results = _retriever.retrieve(query, k=k)
+    passages = [p for p, _ in results]
+    scores = [s for _, s in results]
+    return passages, scores
