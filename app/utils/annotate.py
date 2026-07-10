@@ -5,6 +5,81 @@ from sklearn.cluster import KMeans
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "dataset")
 
+C0_KEYWORDS = [
+    "সংখ্যা", "অঙ্ক", "যোগ", "বিয়োগ", "গুণ", "ভাগ", "বর্গ", "গণিত", "সমীকরণ",
+    "সম্ভাবনা", "মৌলিক", "গুণিতক", "ভগ্নাংশ", "দশমিক", "বীজগণিত", "জ্যামিতি",
+    "ক্ষেত্রফল", "আয়তন", "পরিমাপ", "ত্রিভুজ", "বৃত্ত", "কোণ", "লব্ধি",
+    "পদার্থ", "রসায়ন", "জীববিদ্যা", "জীববিজ্ঞান", "তড়িৎ", "চুম্বক", "আলো",
+    "তাপ", "বল", "গতি", "শক্তি", "চাপ", "তরঙ্গ", "কম্পন",
+    "কম্পিউটার", "সিপিইউ", "CPU", "সফটওয়্যার", "অপারেটিং", "GNU", "প্রোগ্রামিং",
+    "পৃথিবী", "মহাদেশ", "মহাসাগর", "দেশ", "নদী", "পর্বত", "সাগর", "দ্বীপ",
+    "রাজধানী", "ভৌগলিক", "আয়তন", "জলবায়ু", "ভূগোল", "অবস্থান",
+    "মানব", "দেহ", "কোষ", "জীবাণু", "রোগ", "পুষ্টি", "উদ্ভিদ", "প্রাণী",
+    "সূর্য", "চাঁদ", "নক্ষত্র", "গ্রহ", "মহাকাশ", "সৌর", "জোয়ার", "ভাটা",
+    "ফুটবল", "ক্রিকেট", "অলিম্পিক", "টেনিস", "ভলিবল", "বাস্কেটবল",
+    "ইংরেজি", "গ্রামার", "স্পেলিং", "ভোকাবুলারি",
+]
+
+C1_KEYWORDS = [
+    "বাংলা", "বাংলাদেশ", "ঢাকা", "মুক্তিযুদ্ধ", "১৯৭১", "ভাষা আন্দোলন",
+    "বাঙালি", "জাতির পিতা", "শেখ মুজিব", "বঙ্গবন্ধু",
+    "বাক্য", "শব্দ", "অর্থ", "সমাস", "কারক", "বিভক্তি", "ধ্বনি", "ছন্দ",
+    "অলংকার", "পদ", "বানান", "শুদ্ধ", "লিপি", "সন্ধি", "উপসর্গ", "প্রত্যয়",
+    "সাহিত্য", "কবি", "লেখক", "উপন্যাস", "কবিতা", "গল্প", "নাটক",
+    "চলচ্চিত্র", "অভিনেতা", "পরিচালক", "চরিত্র",
+    "মুঘল", "সম্রাট", "বাংলার", "নবাব", "সুলতান", "রাজা",
+    "অভ্র", "কীবোর্ড", "বাংলা লিপি", "পশ্চিমবঙ্গ", "কলকাতা",
+    "নজরুল", "রবীন্দ্রনাথ", "শরৎচন্দ্র", "বঙ্কিম", "মাইকেল", "মধুসূদন",
+    "সংবিধান", "আইন", "ধারা", "অনুচ্ছেদ", "সরকার", "সংসদ",
+    "একুশে", "পদক", "২১শে", "ফেব্রুয়ারি",
+    "জান্নাতাবাদ", "সোনারগাঁও", "বাংলার ইতিহাস",
+]
+
+C2_KEYWORDS = [
+    "২০২৪", "২০২৩", "২০২২", "২০২১", "২০২৫", "২০২৬", "২০২৭", "২০২৮",
+    "অন্তর্বর্তীকালীন", "সাম্প্রতিক", "বর্তমান", "চলতি",
+    "আওয়ামী লীগ", "বিএনপি", "জাতীয় পার্টি",
+    "ড. ইউনূস", "অধ্যাপক ইউনূস",
+]
+
+
+def auto_fill_bands(path="cband_annotation.csv"):
+    full_path = os.path.join(DATA_DIR, path)
+    if not os.path.exists(full_path):
+        print(f"  {full_path} not found. Run annotate first.")
+        return
+
+    df = pd.read_csv(full_path)
+    empty = df["band"].isna() | (df["band"].str.strip() == "")
+    if not empty.any():
+        print("  All bands already filled.")
+        return
+
+    def score_band(text):
+        text = str(text)
+        c0 = sum(1 for kw in C0_KEYWORDS if kw in text)
+        c1 = sum(1 for kw in C1_KEYWORDS if kw in text)
+        c2 = sum(1 for kw in C2_KEYWORDS if kw in text)
+        scores = {"C0": c0, "C1": c1, "C2": c2}
+        best = max(scores, key=scores.get)
+        if scores[best] == 0:
+            return "C0"
+        return best
+
+    for idx in df[empty].index:
+        text = f"{df.loc[idx, 'prompt_bn']} {df.loc[idx, 'context']}"
+        df.loc[idx, "band"] = score_band(text)
+
+    cluster_majority = df.groupby("cluster")["band"].agg(lambda x: x.value_counts().index[0])
+    for idx in df[empty].index:
+        cl = df.loc[idx, "cluster"]
+        df.loc[idx, "band"] = cluster_majority[cl]
+
+    df.to_csv(full_path, index=False, encoding="utf-8-sig")
+    print(f"  Auto-filled {empty.sum()} rows across {df['cluster'].nunique()} clusters.")
+    print(f"  Band distribution: {df['band'].value_counts().to_dict()}")
+    print("  Review and fix any misfires before using in meta.")
+
 
 def embed_samples(df, model_name="csebuetnlp/banglabert_large"):
     from transformers import AutoModel
@@ -73,6 +148,10 @@ def load_annotations(path="cband_annotation.csv"):
 def main(args):
     from app.utils.preprocessing import load_samples
 
+    if args.auto:
+        auto_fill_bands(path=args.output or "cband_annotation.csv")
+        return
+
     print("Loading samples...")
     df = load_samples(load_bands=False)
 
@@ -86,3 +165,5 @@ def main(args):
 
     output_path = args.output or "cband_annotation.csv"
     write_annotation_template(df, labels, path=output_path)
+    if getattr(args, "auto", False):
+        auto_fill_bands(path=output_path)

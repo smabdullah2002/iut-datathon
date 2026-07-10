@@ -286,6 +286,7 @@ def main():
     annotate_parser = subparsers.add_parser("annotate", help="Generate C-band annotation template")
     annotate_parser.add_argument("--clusters", type=int, default=10, help="Number of K-Means clusters")
     annotate_parser.add_argument("--output", default="cband_annotation.csv", help="Output CSV path")
+    annotate_parser.add_argument("--auto", action="store_true", help="Auto-fill bands using keyword heuristics per cluster")
     annotate_parser.set_defaults(func=annotate)
 
     download_parser = subparsers.add_parser("download", help="Download datasets in Colab")
