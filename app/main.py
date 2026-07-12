@@ -230,6 +230,102 @@ def annotate(args):
     annotate_main(args)
 
 
+def threshold(args):
+    import numpy as np
+    import torch
+    from app.utils.preprocessing import (
+        load_samples, split_samples, load_test_set, get_tokenizer,
+        load_xnli_bn, make_xnli_dataset, make_samples_dataset, set_seed,
+    )
+    from app.utils.inference import predict_df, write_submission
+    from app.utils.meta import search_threshold
+    from app.utils.training import get_model, train_xnli_warmup, train_samples, save_model
+
+    seeds = [42, 43, 44][:max(1, args.seeds)]
+    n_seeds = len(seeds)
+    all_test_proba_1 = None
+
+    for i, seed in enumerate(seeds):
+        print(f"\n{'='*60}")
+        print(f"Seed {seed} ({i+1}/{n_seeds})")
+        print(f"{'='*60}")
+        set_seed(seed)
+
+        print("Loading datasets...")
+        train_df = load_samples()
+        test_df = load_test_set()
+
+        tokenizer = get_tokenizer(model_name=args.model_name)
+
+        if args.retrieve:
+            print("Augmenting context-absent rows with Wikipedia retrieval...")
+            from app.utils.retrieval import retrieve_best_passage
+            missing = train_df["context"] == "[NULL]"
+            retrieved = [retrieve_best_passage(p, r) for p, r in zip(train_df.loc[missing, "prompt_bn"], train_df.loc[missing, "response_bn"])]
+            train_df.loc[missing, "context"] = retrieved
+            filled = (train_df.loc[missing, "context"] != "").sum()
+            print(f"  Retrieved {filled}/{missing.sum()} passages")
+
+        train_split, val_split = split_samples(train_df, val_size=args.val_split, random_state=seed)
+        print(f"Train: {len(train_split)}, Val: {len(val_split)}")
+
+        model = get_model(num_labels=2, model_name=args.model_name)
+
+        if not args.skip_xnli:
+            print("Loading xnli_bn for warm-up...")
+            xnli_df = load_xnli_bn()
+            print(f"  {len(xnli_df)} NLI pairs loaded")
+            xnli_dataset = make_xnli_dataset(tokenizer, xnli_df, max_length=args.max_length)
+            print(f"  Warm-up training for {args.xnli_epochs} epochs...")
+            model = train_xnli_warmup(
+                model, tokenizer, xnli_dataset,
+                batch_size=args.batch_size, epochs=args.xnli_epochs, lr=args.xnli_lr,
+            )
+            print("  Warm-up complete.")
+
+        train_dataset = make_samples_dataset(tokenizer, train_split, max_length=args.max_length)
+        val_dataset = make_samples_dataset(tokenizer, val_split, max_length=args.max_length)
+
+        print(f"Fine-tuning for {args.epochs} epochs...")
+        model, _ = train_samples(
+            model, tokenizer, train_dataset, val_dataset,
+            batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
+            save_checkpoints=False,
+        )
+
+        print("Getting val probabilities...")
+        val_proba = predict_df(model, tokenizer, val_split, batch_size=args.batch_size,
+                               max_length=args.max_length, use_retrieval=args.retrieve, return_proba=True)
+        val_proba_1 = val_proba[:, 1]
+        val_labels = val_split["label"].values
+
+        print("Searching best threshold...")
+        best_th = search_threshold(val_proba_1, val_labels)
+
+        print("Running test inference...")
+        test_proba = predict_df(model, tokenizer, test_df, batch_size=args.batch_size,
+                                max_length=args.max_length, use_retrieval=args.retrieve, return_proba=True)
+        test_proba_1 = test_proba[:, 1]
+
+        if all_test_proba_1 is None:
+            all_test_proba_1 = test_proba_1
+        else:
+            all_test_proba_1 += test_proba_1
+
+        del model
+        torch.cuda.empty_cache()
+
+    all_test_proba_1 /= n_seeds
+
+    predictions = (all_test_proba_1 >= best_th).astype(int)
+    vals, counts = np.unique(predictions, return_counts=True)
+    print(f"\nPredictions: {dict(zip(vals, counts))}")
+    print(f"Threshold: {best_th:.3f}")
+
+    ids = test_df["id"].values
+    write_submission(predictions, output_path=args.output, ids=ids)
+
+
 def download(args):
     from app.utils.download_data import main as download_main
     import sys
@@ -288,6 +384,22 @@ def main():
     annotate_parser.add_argument("--output", default="cband_annotation.csv", help="Output CSV path")
     annotate_parser.add_argument("--auto", action="store_true", help="Auto-fill bands using keyword heuristics per cluster")
     annotate_parser.set_defaults(func=annotate)
+
+    threshold_parser = subparsers.add_parser("threshold", help="Train encoder + optimize threshold directly (no LightGBM)")
+    threshold_parser.add_argument("--output", default="submission_threshold.csv")
+    threshold_parser.add_argument("--model-name", default="csebuetnlp/banglabert_large")
+    threshold_parser.add_argument("--batch-size", type=int, default=16)
+    threshold_parser.add_argument("--max-length", type=int, default=256)
+    threshold_parser.add_argument("--epochs", type=int, default=30)
+    threshold_parser.add_argument("--lr", type=float, default=2e-5)
+    threshold_parser.add_argument("--val-split", type=float, default=0.2)
+    threshold_parser.add_argument("--seed", type=int, default=42)
+    threshold_parser.add_argument("--skip-xnli", action="store_true")
+    threshold_parser.add_argument("--xnli-epochs", type=int, default=2)
+    threshold_parser.add_argument("--xnli-lr", type=float, default=3e-5)
+    threshold_parser.add_argument("--retrieve", action="store_true")
+    threshold_parser.add_argument("--seeds", type=int, default=1, help="Number of seeds for ensemble")
+    threshold_parser.set_defaults(func=threshold)
 
     download_parser = subparsers.add_parser("download", help="Download datasets in Colab")
     download_parser.add_argument("extra_args", nargs="*")
