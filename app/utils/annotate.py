@@ -148,8 +148,20 @@ def load_annotations(path="cband_annotation.csv"):
 def main(args):
     from app.utils.preprocessing import load_samples
 
+    output_path = args.output or "cband_annotation.csv"
+
     if args.auto:
-        auto_fill_bands(path=args.output or "cband_annotation.csv")
+        full_path = os.path.join(DATA_DIR, output_path)
+        if not os.path.exists(full_path):
+            print("No annotation template found. Generating template first...")
+            df = load_samples(load_bands=False)
+            print("Generating BanglaBERT embeddings...")
+            embeddings = embed_samples(df)
+            n_clusters = min(args.clusters, max(5, len(df) // 10))
+            print(f"Clustering into {n_clusters} clusters...")
+            labels, _ = cluster_embeddings(embeddings, n_clusters=n_clusters)
+            write_annotation_template(df, labels, path=output_path)
+        auto_fill_bands(path=output_path)
         return
 
     print("Loading samples...")
@@ -163,7 +175,4 @@ def main(args):
     print(f"Clustering into {n_clusters} clusters...")
     labels, _ = cluster_embeddings(embeddings, n_clusters=n_clusters)
 
-    output_path = args.output or "cband_annotation.csv"
     write_annotation_template(df, labels, path=output_path)
-    if getattr(args, "auto", False):
-        auto_fill_bands(path=output_path)
