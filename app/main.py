@@ -105,126 +105,6 @@ def predict(args):
     write_submission(predictions, output_path=args.output, ids=ids)
 
 
-def meta(args):
-    import numpy as np
-    import torch
-    from app.utils.preprocessing import (
-        load_samples, split_samples, load_test_set, get_tokenizer,
-        load_xnli_bn, make_xnli_dataset, make_samples_dataset, set_seed,
-    )
-    from app.utils.inference import write_submission
-    from app.utils.meta import oof_meta_features, extract_features, train_lightgbm, predict_lightgbm
-    from app.utils.training import get_model, train_xnli_warmup, train_samples
-    from sklearn.model_selection import train_test_split
-
-    print("Loading datasets...")
-    train_df = load_samples()
-    test_df = load_test_set()
-    has_bands = "band" in train_df.columns
-
-    tokenizer = get_tokenizer(model_name=args.model_name)
-    use_retrieval = args.retrieve
-    if use_retrieval:
-        print("Using retrieval for context-absent rows")
-
-    seeds = [42, 43, 44][:max(1, args.seeds)]
-    n_seeds = len(seeds)
-
-    base_model = get_model(num_labels=2, model_name=args.model_name)
-    if not args.skip_xnli:
-        print("Loading xnli_bn for warmup...")
-        xnli_df = load_xnli_bn()
-        xnli_dataset = make_xnli_dataset(tokenizer, xnli_df, max_length=args.max_length)
-        print(f"  XNLI warmup for {args.xnli_epochs} epochs...")
-        base_model = train_xnli_warmup(
-            base_model, tokenizer, xnli_dataset,
-            batch_size=args.batch_size, epochs=args.xnli_epochs, lr=args.xnli_lr,
-        )
-
-    base_model_state = base_model.state_dict()
-
-    n_splits = max(2, args.cv)
-    train_meta_list = []
-    test_feats_list = []
-
-    for i, seed in enumerate(seeds):
-        print(f"\n{'='*60}")
-        print(f"Seed {seed} ({i+1}/{n_seeds})")
-        print(f"{'='*60}")
-        set_seed(seed)
-
-        print(f"Generating OOF probabilities ({n_splits}-fold CV)...")
-        train_meta = oof_meta_features(
-            train_df, tokenizer, n_splits=n_splits,
-            model_name=args.model_name,
-            batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
-            max_length=args.max_length, seed=seed,
-            use_retrieval=use_retrieval,
-            xnli_model=base_model if not args.skip_xnli else None,
-        )
-
-        print("Training final model with early stopping...")
-        final_split_train, final_split_val = split_samples(train_df, val_size=args.val_split, random_state=seed)
-        final_train_ds = make_samples_dataset(tokenizer, final_split_train, max_length=args.max_length)
-        final_val_ds = make_samples_dataset(tokenizer, final_split_val, max_length=args.max_length)
-
-        final_model = get_model(num_labels=2, model_name=args.model_name)
-        if not args.skip_xnli:
-            final_model.load_state_dict(base_model_state)
-        final_model, _ = train_samples(
-            final_model, tokenizer, final_train_ds, final_val_ds,
-            batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
-            save_checkpoints=False,
-        )
-
-        print("Extracting test features...")
-        test_feats = extract_features(
-            final_model, tokenizer, test_df,
-            use_retrieval=use_retrieval,
-            batch_size=args.batch_size, max_length=args.max_length,
-        )
-
-        train_meta_list.append(train_meta)
-        test_feats_list.append(test_feats)
-        del final_model
-        torch.cuda.empty_cache()
-
-    del base_model, base_model_state
-    torch.cuda.empty_cache()
-
-    print(f"\n{'='*60}")
-    print(f"Averaging across {n_seeds} seeds...")
-    print(f"{'='*60}")
-
-    if n_seeds > 1:
-        avg_meta = train_meta_list[0].copy()
-        avg_meta["proba_1"] = np.mean([df["proba_1"].values for df in train_meta_list], axis=0)
-
-        avg_test = test_feats_list[0].copy()
-        avg_test["proba_1"] = np.mean([df["proba_1"].values for df in test_feats_list], axis=0)
-    else:
-        avg_meta = train_meta_list[0]
-        avg_test = test_feats_list[0]
-
-    meta_train_df, meta_val_df = train_test_split(
-        avg_meta, test_size=0.3,
-        stratify=avg_meta["label"], random_state=42,
-    )
-    print(f"LightGBM train: {len(meta_train_df)}, val: {len(meta_val_df)}")
-
-    print("Training LightGBM with band-aware thresholding...")
-    meta_model, best_th, band_thresholds = train_lightgbm(meta_train_df, meta_val_df)
-    print(f"  Using global threshold: {best_th:.3f}")
-
-    print("Predicting...")
-    predictions = predict_lightgbm(meta_model, avg_test, threshold=best_th)
-    vals, counts = np.unique(predictions, return_counts=True)
-    print(f"  Predictions: {dict(zip(vals, counts))}")
-
-    ids = test_df["id"].values
-    write_submission(predictions, output_path=args.output, ids=ids)
-
-
 def annotate(args):
     from app.utils.annotate import main as annotate_main
     annotate_main(args)
@@ -239,11 +119,13 @@ def threshold(args):
     )
     from app.utils.inference import predict_df, write_submission
     from app.utils.meta import search_threshold
-    from app.utils.training import get_model, train_xnli_warmup, train_samples, save_model
+    from app.utils.training import get_model, train_xnli_warmup, train_samples
 
     seeds = [42, 43, 44][:max(1, args.seeds)]
     n_seeds = len(seeds)
     all_test_proba_1 = None
+    all_oof_proba_1 = None
+    all_oof_labels = None
 
     for i, seed in enumerate(seeds):
         print(f"\n{'='*60}")
@@ -299,8 +181,12 @@ def threshold(args):
         val_proba_1 = val_proba[:, 1]
         val_labels = val_split["label"].values
 
-        print("Searching best threshold...")
-        best_th = search_threshold(val_proba_1, val_labels)
+        if all_oof_proba_1 is None:
+            all_oof_proba_1 = val_proba_1
+            all_oof_labels = val_labels
+        else:
+            all_oof_proba_1 = np.concatenate([all_oof_proba_1, val_proba_1])
+            all_oof_labels = np.concatenate([all_oof_labels, val_labels])
 
         print("Running test inference...")
         test_proba = predict_df(model, tokenizer, test_df, batch_size=args.batch_size,
@@ -316,6 +202,9 @@ def threshold(args):
         torch.cuda.empty_cache()
 
     all_test_proba_1 /= n_seeds
+
+    print(f"\nSearching threshold on combined OOF probs ({len(all_oof_proba_1)} samples)...")
+    best_th = search_threshold(all_oof_proba_1, all_oof_labels)
 
     predictions = (all_test_proba_1 >= best_th).astype(int)
     vals, counts = np.unique(predictions, return_counts=True)
@@ -362,23 +251,6 @@ def main():
     predict_parser.add_argument("--retrieve", action="store_true", help="Retrieve Wikipedia passages for context-absent rows")
     predict_parser.set_defaults(func=predict)
 
-    meta_parser = subparsers.add_parser("meta", help="Train meta-classifier via CV OOF probabilities + LightGBM")
-    meta_parser.add_argument("--output", default="submission_meta.csv")
-    meta_parser.add_argument("--model-name", default="csebuetnlp/banglabert_large")
-    meta_parser.add_argument("--batch-size", type=int, default=8)
-    meta_parser.add_argument("--max-length", type=int, default=256)
-    meta_parser.add_argument("--epochs", type=int, default=10)
-    meta_parser.add_argument("--lr", type=float, default=2e-5)
-    meta_parser.add_argument("--val-split", type=float, default=0.2)
-    meta_parser.add_argument("--seed", type=int, default=42)
-    meta_parser.add_argument("--cv", type=int, default=5, help="Number of CV folds for OOF probabilities")
-    meta_parser.add_argument("--skip-xnli", action="store_true", help="Skip XNLI warmup")
-    meta_parser.add_argument("--xnli-epochs", type=int, default=2)
-    meta_parser.add_argument("--xnli-lr", type=float, default=3e-5)
-    meta_parser.add_argument("--retrieve", action="store_true", help="Use Wikipedia retrieval for context-absent rows")
-    meta_parser.add_argument("--seeds", type=int, default=3, help="Number of seeds for ensemble (default 3)")
-    meta_parser.set_defaults(func=meta)
-
     annotate_parser = subparsers.add_parser("annotate", help="Generate C-band annotation template")
     annotate_parser.add_argument("--clusters", type=int, default=10, help="Number of K-Means clusters")
     annotate_parser.add_argument("--output", default="cband_annotation.csv", help="Output CSV path")
@@ -390,7 +262,7 @@ def main():
     threshold_parser.add_argument("--model-name", default="csebuetnlp/banglabert_large")
     threshold_parser.add_argument("--batch-size", type=int, default=16)
     threshold_parser.add_argument("--max-length", type=int, default=256)
-    threshold_parser.add_argument("--epochs", type=int, default=30)
+    threshold_parser.add_argument("--epochs", type=int, default=10)
     threshold_parser.add_argument("--lr", type=float, default=2e-5)
     threshold_parser.add_argument("--val-split", type=float, default=0.2)
     threshold_parser.add_argument("--seed", type=int, default=42)
