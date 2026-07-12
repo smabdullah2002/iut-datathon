@@ -12,27 +12,17 @@ def _static_features(df):
     features["response_len"] = df["response_bn"].str.len()
 
     scores = []
-    top5_means = []
-    top5_maxs = []
     for _, row in df.iterrows():
         if row["context"] == "[NULL]":
             try:
                 _, top_scores = retrieve_top_k(row["prompt_bn"], row["response_bn"], k=5)
                 scores.append(top_scores[0])
-                top5_means.append(float(np.mean(top_scores)))
-                top5_maxs.append(top_scores[0])
             except Exception:
                 scores.append(0.0)
-                top5_means.append(0.0)
-                top5_maxs.append(0.0)
         else:
             scores.append(1.0)
-            top5_means.append(1.0)
-            top5_maxs.append(1.0)
 
     features["retrieval_score"] = scores
-    features["retrieval_top5_mean"] = top5_means
-    features["retrieval_top5_max"] = top5_maxs
 
     if "label" in df.columns:
         features["label"] = df["label"].values
@@ -46,7 +36,6 @@ def extract_features(model, tokenizer, df, batch_size=16, max_length=256, use_re
     features = _static_features(df)
     probs = predict_df(model, tokenizer, df, batch_size=batch_size, max_length=max_length,
                        use_retrieval=use_retrieval, return_proba=True)
-    features["proba_0"] = probs[:, 0]
     features["proba_1"] = probs[:, 1]
     return features
 
@@ -65,7 +54,6 @@ def oof_meta_features(df, tokenizer, n_splits=5, model_name="csebuetnlp/banglabe
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
 
     static_feats = _static_features(df)
-    oof_proba_0 = np.empty(len(df), dtype=np.float32)
     oof_proba_1 = np.empty(len(df), dtype=np.float32)
     for fold, (train_idx, val_idx) in enumerate(skf.split(df, stratify_cols)):
         print(f"\n--- Meta CV Fold {fold + 1}/{n_splits} ---")
@@ -91,13 +79,11 @@ def oof_meta_features(df, tokenizer, n_splits=5, model_name="csebuetnlp/banglabe
         val_probs = predict_df(fold_model, tokenizer, val_df, batch_size=batch_size,
                                 max_length=max_length, use_retrieval=use_retrieval,
                                 return_proba=True)
-        oof_proba_0[val_idx] = val_probs[:, 0]
         oof_proba_1[val_idx] = val_probs[:, 1]
         fold_model.cpu()
         torch.cuda.empty_cache()
 
     train_meta = static_feats.copy()
-    train_meta["proba_0"] = oof_proba_0
     train_meta["proba_1"] = oof_proba_1
 
     return train_meta
@@ -157,7 +143,8 @@ def train_lightgbm(train_features, val_features=None):
     has_band = "band" in train_features.columns
     X_train = train_features.drop(columns=["label"])
     y_train = train_features["label"]
-    bands_train = X_train.pop("band") if has_band else None
+    if has_band:
+        X_train.pop("band")
 
     model = lgb.LGBMClassifier(
         objective="binary",
@@ -195,7 +182,7 @@ def train_lightgbm(train_features, val_features=None):
     return model, threshold, band_thresholds
 
 
-def predict_lightgbm(model, test_features, threshold=0.5, band_thresholds=None, bands=None):
+def predict_lightgbm(model, test_features, threshold=0.5):
     X_test = test_features.copy()
     if "band" in X_test.columns:
         X_test = X_test.drop(columns=["band"])

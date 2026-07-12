@@ -109,7 +109,7 @@ def meta(args):
     import numpy as np
     import torch
     from app.utils.preprocessing import (
-        load_samples, load_test_set, get_tokenizer,
+        load_samples, split_samples, load_test_set, get_tokenizer,
         load_xnli_bn, make_xnli_dataset, make_samples_dataset, set_seed,
     )
     from app.utils.inference import write_submission
@@ -163,14 +163,16 @@ def meta(args):
             xnli_model=base_model if not args.skip_xnli else None,
         )
 
-        print("Training final model on all data...")
-        full_train_ds = make_samples_dataset(tokenizer, train_df, max_length=args.max_length)
+        print("Training final model with early stopping...")
+        final_split_train, final_split_val = split_samples(train_df, val_size=args.val_split, random_state=seed)
+        final_train_ds = make_samples_dataset(tokenizer, final_split_train, max_length=args.max_length)
+        final_val_ds = make_samples_dataset(tokenizer, final_split_val, max_length=args.max_length)
 
         final_model = get_model(num_labels=2, model_name=args.model_name)
         if not args.skip_xnli:
             final_model.load_state_dict(base_model_state)
         final_model, _ = train_samples(
-            final_model, tokenizer, full_train_ds, None,
+            final_model, tokenizer, final_train_ds, final_val_ds,
             batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
             save_checkpoints=False,
         )
@@ -196,18 +198,16 @@ def meta(args):
 
     if n_seeds > 1:
         avg_meta = train_meta_list[0].copy()
-        avg_meta["proba_0"] = np.mean([df["proba_0"].values for df in train_meta_list], axis=0)
         avg_meta["proba_1"] = np.mean([df["proba_1"].values for df in train_meta_list], axis=0)
 
         avg_test = test_feats_list[0].copy()
-        avg_test["proba_0"] = np.mean([df["proba_0"].values for df in test_feats_list], axis=0)
         avg_test["proba_1"] = np.mean([df["proba_1"].values for df in test_feats_list], axis=0)
     else:
         avg_meta = train_meta_list[0]
         avg_test = test_feats_list[0]
 
     meta_train_df, meta_val_df = train_test_split(
-        avg_meta, test_size=args.val_split,
+        avg_meta, test_size=0.3,
         stratify=avg_meta["label"], random_state=42,
     )
     print(f"LightGBM train: {len(meta_train_df)}, val: {len(meta_val_df)}")
