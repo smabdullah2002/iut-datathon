@@ -24,7 +24,7 @@ def load_cband(path="cband_annotation.csv"):
     if not os.path.exists(full_path):
         return None
     df = pd.read_csv(full_path)
-    df["band"] = df["band"].str.strip().str.upper()
+    df["band"] = df["band"].fillna("").astype(str).str.strip().str.upper()
     invalid = ~df["band"].isin(["C0", "C1", "C2"])
     if invalid.any():
         print(f"Warning: {invalid.sum()} rows in {path} have invalid or empty bands. Returning None.")
