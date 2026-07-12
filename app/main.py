@@ -118,14 +118,11 @@ def threshold(args):
         load_xnli_bn, make_xnli_dataset, make_samples_dataset, set_seed,
     )
     from app.utils.inference import predict_df, write_submission
-    from app.utils.meta import search_threshold
     from app.utils.training import get_model, train_xnli_warmup, train_samples
 
     seeds = [42, 43, 44][:max(1, args.seeds)]
     n_seeds = len(seeds)
     all_test_proba_1 = None
-    all_oof_proba_1 = None
-    all_oof_labels = None
 
     for i, seed in enumerate(seeds):
         print(f"\n{'='*60}")
@@ -168,25 +165,15 @@ def threshold(args):
         train_dataset = make_samples_dataset(tokenizer, train_split, max_length=args.max_length)
         val_dataset = make_samples_dataset(tokenizer, val_split, max_length=args.max_length)
 
+        model_dir = os.path.join(MODELS_DIR, f"threshold_seed_{seed}")
         print(f"Fine-tuning for {args.epochs} epochs...")
-        model, _ = train_samples(
+        model, metrics = train_samples(
             model, tokenizer, train_dataset, val_dataset,
+            output_dir=model_dir,
             batch_size=args.batch_size, epochs=args.epochs, lr=args.lr,
-            save_checkpoints=False,
+            save_checkpoints=True,
         )
-
-        print("Getting val probabilities...")
-        val_proba = predict_df(model, tokenizer, val_split, batch_size=args.batch_size,
-                               max_length=args.max_length, use_retrieval=args.retrieve, return_proba=True)
-        val_proba_1 = val_proba[:, 1]
-        val_labels = val_split["label"].values
-
-        if all_oof_proba_1 is None:
-            all_oof_proba_1 = val_proba_1
-            all_oof_labels = val_labels
-        else:
-            all_oof_proba_1 = np.concatenate([all_oof_proba_1, val_proba_1])
-            all_oof_labels = np.concatenate([all_oof_labels, val_labels])
+        print(f"  Best val f1_hallucinated: {metrics.get('eval_f1_hallucinated', 'N/A'):.4f}")
 
         print("Running test inference...")
         test_proba = predict_df(model, tokenizer, test_df, batch_size=args.batch_size,
@@ -203,13 +190,9 @@ def threshold(args):
 
     all_test_proba_1 /= n_seeds
 
-    print(f"\nSearching threshold on combined OOF probs ({len(all_oof_proba_1)} samples)...")
-    best_th = search_threshold(all_oof_proba_1, all_oof_labels)
-
-    predictions = (all_test_proba_1 >= best_th).astype(int)
+    predictions = (all_test_proba_1 >= 0.5).astype(int)
     vals, counts = np.unique(predictions, return_counts=True)
     print(f"\nPredictions: {dict(zip(vals, counts))}")
-    print(f"Threshold: {best_th:.3f}")
 
     ids = test_df["id"].values
     write_submission(predictions, output_path=args.output, ids=ids)
