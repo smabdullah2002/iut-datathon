@@ -82,13 +82,28 @@ def auto_fill_bands(path="cband_annotation.csv"):
     print("  Review and fix any misfires before using in meta.")
 
 
-def embed_samples(df, model_name="csebuetnlp/banglabert_large"):
+def embed_samples(df, model_name="csebuetnlp/banglabert"):
     from transformers import AutoModel
     from app.utils.preprocessing import get_tokenizer, build_input_text
     import torch
+    import shutil
 
-    tokenizer = get_tokenizer(model_name)
-    model = AutoModel.from_pretrained(model_name)
+    DRIVE_MODELS = "/content/drive/MyDrive/iut_datathon_models"
+    local_model_path = os.path.join(DRIVE_MODELS, model_name.split("/")[-1])
+
+    if os.path.exists(local_model_path):
+        print(f"  Loading cached model from {local_model_path}")
+        tokenizer = get_tokenizer(local_model_path)
+        model = AutoModel.from_pretrained(local_model_path)
+    else:
+        print(f"  Downloading model from HuggingFace...")
+        tokenizer = get_tokenizer(model_name)
+        model = AutoModel.from_pretrained(model_name)
+        os.makedirs(local_model_path, exist_ok=True)
+        model.save_pretrained(local_model_path)
+        tokenizer.save_pretrained(local_model_path)
+        print(f"  Model saved to {local_model_path}")
+
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model = model.to(device)
     model.eval()
