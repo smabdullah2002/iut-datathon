@@ -88,8 +88,11 @@ def embed_samples(df, model_name="csebuetnlp/banglabert"):
     import torch
     import shutil
 
-    DRIVE_MODELS = "/content/drive/MyDrive/iut_datathon_models"
-    local_model_path = os.path.join(DRIVE_MODELS, model_name.split("/")[-1])
+    if os.path.exists("/content/drive/MyDrive"):
+        MODELS_DIR = "/content/drive/MyDrive/iut_datathon_models"
+    else:
+        MODELS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "models")
+    local_model_path = os.path.join(MODELS_DIR, model_name.split("/")[-1])
 
     if os.path.exists(local_model_path):
         print(f"  Loading cached model from {local_model_path}")
